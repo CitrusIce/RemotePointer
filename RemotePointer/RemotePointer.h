@@ -25,6 +25,7 @@ public:
 	T& operator =(intptr_t address);
 
 	template<typename T2, int num2 = 1>T& operator =(const remote_ptr<T2, num2>& p);
+	template<int num2 = 1>T& operator =(const remote_ptr<void, num2>& p);
 	remote_ptr<T, num> operator +(intptr_t offset);
 };
 
@@ -92,6 +93,34 @@ template<typename T2, int num2>T& remote_ptr<T, num>::operator =(const remote_pt
 
 }
 template<typename T, int num>
+template<int num2>T& remote_ptr<T, num>::operator =(const remote_ptr<void, num2>& rp)
+{
+	if (sizeof(T) * num <= num2)
+	{
+		remote_ptr<void, sizeof(T)* num>::pBuffer = rp.pBuffer;
+		remote_ptr<void, sizeof(T)* num>::pBufferOffset = rp.pBufferOffset;
+		remote_ptr<void, sizeof(T)* num>::hProcess = rp.hProcess;
+		remote_ptr<void, sizeof(T)* num>::baseAddr = rp.baseAddr;
+		remote_ptr<void, sizeof(T)* num>::bufferSize = num;
+	}
+	else
+	{
+		remote_ptr<void, sizeof(T)* num>::hProcess = rp.hProcess;
+		remote_ptr<void, sizeof(T)* num>::pBufferOffset.reset(operator new(num));
+		remote_ptr<void, sizeof(T)* num>::pBuffer.reset(operator new(num));
+		remote_ptr<void, sizeof(T)* num>::baseAddr = rp.baseAddr;
+		remote_ptr<void, sizeof(T)* num>::bufferSize = num;
+		size_t size;
+		if (!ReadProcessMemory(this->hProcess.get(), (LPCVOID)remote_ptr<void, sizeof(T) * num>::baseAddr, remote_ptr<void, sizeof(T) * num>::pBuffer.get(), sizeof(T) * num, &size))
+		{
+			DWORD dwErrCode = GetLastError();
+			throw std::exception("memory access failed");
+		}
+	}
+	return *(T*)(remote_ptr<void, sizeof(T)* num>::pBuffer.get());
+
+}
+template<typename T, int num>
 remote_ptr<T, num> remote_ptr<T, num>::operator +(intptr_t offset)
 {
 	return remote_ptr<T, num>(remote_ptr<void, sizeof(T)* num>::hProcess.get(), remote_ptr<void, sizeof(T)* num>::baseAddr + offset);
@@ -117,6 +146,7 @@ public:
 	~remote_ptr();
 	void operator =(intptr_t address);
 	template<typename T2, int num2>void operator =(const remote_ptr<T2, num2>& p);
+	template<int num2>void operator =(const remote_ptr<void, num2>& p);
 	remote_ptr<void, num> operator +(intptr_t offset);
 	template<typename T2, int num2> bool operator ==(const remote_ptr<T2, num2>& rp);
 	BOOL update();
@@ -269,6 +299,34 @@ template<int num>
 template<typename T2, int num2> void remote_ptr<void, num>::operator =(const remote_ptr<T2, num2>& rp)
 {
 	if (num <= num2 * sizeof(T2))
+	{
+		pBuffer = rp.pBuffer;
+		pBufferOffset = rp.pBufferOffset;
+		hProcess = rp.hProcess;
+		baseAddr = rp.baseAddr;
+		bufferSize = num;
+	}
+	else
+	{
+		hProcess = rp.hProcess;
+		pBufferOffset.reset(operator new(num));
+		pBuffer.reset(operator new(num));
+		baseAddr = rp.baseAddr;
+		bufferSize = num;
+		size_t size;
+		if (!ReadProcessMemory(this->hProcess.get(), (LPCVOID)baseAddr, pBuffer.get(), num, &size))
+		{
+			DWORD dwErrCode = GetLastError();
+			throw std::exception("memory access failed");
+		}
+	}
+	return;
+
+}
+template<int num>
+template<int num2> void remote_ptr<void, num>::operator =(const remote_ptr<void, num2>& rp)
+{
+	if (num <= num2 )
 	{
 		pBuffer = rp.pBuffer;
 		pBufferOffset = rp.pBufferOffset;

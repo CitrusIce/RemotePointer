@@ -61,6 +61,8 @@ int main()
 	p4.update();
 	std::cout << std::hex << *p4 << std::endl;
 
+	p4 = p3;
+
 
 	return 0;
 }
