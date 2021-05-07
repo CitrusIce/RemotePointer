@@ -123,7 +123,8 @@ template<int num2>T& remote_ptr<T, num>::operator =(const remote_ptr<void, num2>
 template<typename T, int num>
 remote_ptr<T, num> remote_ptr<T, num>::operator +(intptr_t offset)
 {
-	return remote_ptr<T, num>(remote_ptr<void, sizeof(T)* num>::hProcess.get(), remote_ptr<void, sizeof(T)* num>::baseAddr + offset);
+	return remote_ptr<T, num>(remote_ptr<void, sizeof(T)* num>::hProcess.get(), remote_ptr<void, sizeof(T)* num>::baseAddr + (sizeof(T) * offset));
+
 }
 
 //void partial specialization 
@@ -525,4 +526,4 @@ remote_ptr<void, 0> remote_ptr<void, 0>::operator +(intptr_t offset)
 {
 	return remote_ptr<void, 0>(hProcess.get(), baseAddr + offset, bufferSize);
 }
-using remote_pvoid = remote_ptr<void,0>;
+using remote_pvoid = remote_ptr<void, 0>;
