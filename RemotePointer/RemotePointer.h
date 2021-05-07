@@ -3,7 +3,7 @@
 #include <Windows.h>
 inline HANDLE OpenProcessVm(DWORD pid)
 {
-	return OpenProcess(PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE, FALSE, pid);
+	return OpenProcess(PROCESS_ALL_ACCESS | PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE, FALSE, pid);
 }
 template <typename T, int num = 1>
 class remote_ptr :public remote_ptr<void, sizeof(T)* num>
@@ -11,9 +11,11 @@ class remote_ptr :public remote_ptr<void, sizeof(T)* num>
 public:
 	template<typename T2, int num2 = 1> remote_ptr(const remote_ptr<T2, num2>& rp)
 		:remote_ptr<void, sizeof(T)* num>(rp) {}
-	remote_ptr(HANDLE hProcess)
+	template<int num2> remote_ptr(const remote_ptr<void, num2>& rp)
+		: remote_ptr<void, sizeof(T)* num>(rp) {}
+	remote_ptr(std::shared_ptr<void> hProcess)
 		:remote_ptr<void, sizeof(T)* num>(hProcess) {}
-	remote_ptr(HANDLE hProcess, intptr_t addr)
+	remote_ptr(std::shared_ptr<void> hProcess, intptr_t addr)
 		:remote_ptr<void, sizeof(T)* num>(hProcess, addr) {}
 	remote_ptr(DWORD dwPid)
 		:remote_ptr<void, sizeof(T)* num>(dwPid) {}
@@ -123,8 +125,7 @@ template<int num2>T& remote_ptr<T, num>::operator =(const remote_ptr<void, num2>
 template<typename T, int num>
 remote_ptr<T, num> remote_ptr<T, num>::operator +(intptr_t offset)
 {
-	return remote_ptr<T, num>(remote_ptr<void, sizeof(T)* num>::hProcess.get(), remote_ptr<void, sizeof(T)* num>::baseAddr + (sizeof(T) * offset));
-
+	return remote_ptr<T, num>(remote_ptr<void, sizeof(T)* num>::hProcess, remote_ptr<void, sizeof(T)* num>::baseAddr + (sizeof(T) * offset));
 }
 
 //void partial specialization 
@@ -140,8 +141,9 @@ public:
 	intptr_t baseAddr = 0;
 
 	template<typename T2, int num2> remote_ptr(const remote_ptr<T2, num2>& rp);
-	remote_ptr(HANDLE hProcess);
-	remote_ptr(HANDLE hProcess, intptr_t addr);
+	template<int num2> remote_ptr(const remote_ptr<void, num2>& rp);
+	remote_ptr(std::shared_ptr<void> hProcess);
+	remote_ptr(std::shared_ptr<void> hProcess, intptr_t addr);
 	remote_ptr(DWORD dwPid);
 	remote_ptr(DWORD dwPid, intptr_t addr);
 	~remote_ptr();
@@ -218,18 +220,46 @@ template<typename T2, int num2> remote_ptr<void, num>::remote_ptr(const remote_p
 	}
 }
 template<int num>
-remote_ptr<void, num>::remote_ptr(HANDLE hProcess)
+template<int num2>
+remote_ptr<void, num>::remote_ptr(const remote_ptr<void, num2>& rp)
 {
-	this->hProcess = std::shared_ptr<void>(hProcess, CloseHandle);
+	if (num <= num2)
+	{
+		pBuffer = rp.pBuffer;
+		pBufferOffset = rp.pBufferOffset;
+		hProcess = rp.hProcess;
+		baseAddr = rp.baseAddr;
+		bufferSize = rp.bufferSize;
+	}
+	else
+	{
+		hProcess = rp.hProcess;
+		pBufferOffset.reset(operator new(num));
+		pBuffer.reset(operator new(num));
+		baseAddr = rp.baseAddr;
+		bufferSize = num;
+		size_t size;
+		if (!ReadProcessMemory(this->hProcess.get(), (LPCVOID)baseAddr, pBuffer.get(), num, &size))
+		{
+			DWORD dwErrCode = GetLastError();
+			throw std::exception("memory access failed");
+		}
+	}
+
+}
+template<int num>
+remote_ptr<void, num>::remote_ptr(std::shared_ptr<void> hProcess)
+{
+	this->hProcess = hProcess;
 	pBufferOffset.reset(operator new(num));
 	pBuffer.reset(operator new(num));
 	bufferSize = num;
 }
 
 template<int num>
-remote_ptr<void, num>::remote_ptr(HANDLE hProcess, intptr_t addr)
+remote_ptr<void, num>::remote_ptr(std::shared_ptr<void> hProcess, intptr_t addr)
 {
-	this->hProcess = std::shared_ptr<void>(hProcess, CloseHandle);
+	this->hProcess = hProcess;
 	pBufferOffset.reset(operator new(num));
 	pBuffer.reset(operator new(num));
 	baseAddr = addr;
@@ -370,8 +400,8 @@ public:
 	intptr_t baseAddr = 0;
 
 	template<typename T2, int num2> remote_ptr(const remote_ptr<T2, num2>& rp);
-	remote_ptr(HANDLE hProcess, size_t bufferSize);
-	remote_ptr(HANDLE hProcess, intptr_t addr, size_t bufferSize);
+	remote_ptr(std::shared_ptr<void> hProcess, size_t bufferSize);
+	remote_ptr(std::shared_ptr<void> hProcess, intptr_t addr, size_t bufferSize);
 	remote_ptr(DWORD dwPid, size_t bufferSize);
 	remote_ptr(DWORD dwPid, intptr_t addr, size_t bufferSize);
 	void operator =(intptr_t address);
@@ -432,17 +462,17 @@ template<typename T2, int num2> remote_ptr<void, 0>::remote_ptr(const remote_ptr
 	baseAddr = rp.baseAddr;
 	bufferSize = rp.bufferSize;
 }
-remote_ptr<void, 0>::remote_ptr(HANDLE hProcess, size_t bufferSize)
+remote_ptr<void, 0>::remote_ptr(std::shared_ptr<void> hProcess, size_t bufferSize)
 {
-	this->hProcess = std::shared_ptr<void>(hProcess, CloseHandle);
+	this->hProcess = hProcess;
 	pBufferOffset.reset(operator new(bufferSize));
 	pBuffer.reset(operator new(bufferSize));
 	bufferSize = bufferSize;
 }
 
-remote_ptr<void, 0>::remote_ptr(HANDLE hProcess, intptr_t addr, size_t bufferSize)
+remote_ptr<void, 0>::remote_ptr(std::shared_ptr<void> hProcess, intptr_t addr, size_t bufferSize)
 {
-	this->hProcess = std::shared_ptr<void>(hProcess, CloseHandle);
+	this->hProcess = hProcess;
 	pBufferOffset.reset(operator new(bufferSize));
 	pBuffer.reset(operator new(bufferSize));
 	baseAddr = addr;
@@ -524,6 +554,49 @@ template<int num2> void remote_ptr<void, 0>::operator =(const remote_ptr<void, n
 }
 remote_ptr<void, 0> remote_ptr<void, 0>::operator +(intptr_t offset)
 {
-	return remote_ptr<void, 0>(hProcess.get(), baseAddr + offset, bufferSize);
+	return remote_ptr<void, 0>(hProcess, baseAddr + offset, bufferSize);
 }
 using remote_pvoid = remote_ptr<void, 0>;
+
+class remote_str :public remote_pvoid
+{
+public:
+	template<typename T2, int num2> remote_str(const remote_ptr<T2, num2>& rp);
+	remote_str(std::shared_ptr<void> hProcess);
+	//remote_pvoid::remote_ptr(hProcess, 0x100) {}
+	remote_str(std::shared_ptr<void> hProcess, intptr_t addr);
+	//remote_pvoid::remote_ptr(hProcess, addr, 0x100) {}
+//remote_str(DWORD dwPid, size_t bufferSize);
+//remote_str(DWORD dwPid, intptr_t addr, size_t bufferSize);
+	char* get();
+
+};
+remote_str::remote_str(std::shared_ptr<void> hProcess)
+	:remote_pvoid::remote_ptr(hProcess, 0x100)
+{
+}
+remote_str::remote_str(std::shared_ptr<void> hProcess, intptr_t addr)
+	:remote_pvoid::remote_ptr(hProcess, addr, 0x100)
+{
+	size_t size = 0x100;
+	while (!strchr((char*)remote_pvoid::pBuffer.get(), '\0'))
+	{
+		size *= 2;
+		remote_pvoid::resize(size);
+	}
+}
+template<typename T2, int num2> remote_str::remote_str(const remote_ptr<T2, num2>& rp):
+	remote_pvoid::remote_ptr(rp)
+{
+	size_t size = 0x100;
+	while (!strchr((char*)remote_pvoid::pBuffer.get(), '\0'))
+	{
+		size *= 2;
+		remote_pvoid::resize(size);
+	}
+}
+char* remote_str::get()
+{
+	return (char*)remote_pvoid::pBuffer.get();
+}
+
