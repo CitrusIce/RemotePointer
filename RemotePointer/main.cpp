@@ -63,6 +63,9 @@ int main()
 
 	p4 = p3;
 
+	remote_ptr<void> p5 = p4;
+	remote_pvoid p6 = p4;
+	p6.resize(0x100);
 
 	return 0;
 }
